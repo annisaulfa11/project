@@ -3,14 +3,21 @@ import joblib
 import librosa
 import numpy as np
 import uvicorn
+import uuid
 from google.cloud import storage
-import os
+import os, io
+import requests
+from tensorflow.keras.models import load_model
+
+
 
 os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = "keyfile.json"
 
+# Load the H5 model
+model = load_model('model.h5')
 
-model_file = open('model.pkl','rb')
-model = joblib.load(model_file)
+# model_file = open('model.pkl','rb')
+# model = joblib.load(model_file)
 
 app = FastAPI()
 storage_client = storage.Client()
@@ -19,13 +26,23 @@ storage_client = storage.Client()
 async def predict(audio: UploadFile = File(...)):
     try:
         # Upload the audio file to Google Cloud Storage
-        bucket_name = 'audio-bucket-99'
-        filename = f'{audio.filename}-{uuid.uuid4()}.wav'  # Generate a unique filename
+        bucket_name = 'audio-bucket-98'
+        filename = f'{uuid.uuid4()}.wav'  # Generate a unique filename
         bucket = storage_client.bucket(bucket_name)
         blob = bucket.blob(filename)
         blob.upload_from_file(audio.file)
 
-        signal, sr = librosa.load(audio.file, sr=22050)
+        # Get the URL of the uploaded audio file
+        audio_url = "https://storage.googleapis.com/" + bucket_name + "/" + filename
+        
+        # Download the audio file from the URL
+        response = requests.get(audio_url)
+        audio_data = response.content
+
+        # Load the audio data using soundfile
+        with io.BytesIO(audio_data) as audio_file:
+            signal, sr = librosa.load(audio_file, sr=22050)
+
         # Extract the MFCC from the audio
         mfcc = librosa.feature.mfcc(y=signal,
                                     sr=sr,
@@ -70,4 +87,4 @@ async def predict(audio: UploadFile = File(...)):
         return {'error': 'Error processing audio file: ' + str(e)}
 
 if __name__ == '__main__':
-    uvicorn.run(app,host="0.0.0.0",port=3000)
+    uvicorn.run(app,host="127.0.0.1",port=3000)
